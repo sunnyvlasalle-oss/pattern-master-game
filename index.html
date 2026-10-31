@@ -1,0 +1,268 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Play Pattern Master, a free sequence and logic puzzle game.">
+<title>Pattern Master — Crack the Sequence</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;min-height:100vh;padding:18px;
+ display:flex;align-items:center;justify-content:center;
+ font-family:Arial,sans-serif;color:white;
+ background:radial-gradient(circle at top,#42306c,#141326 70%)
+}
+.game{width:100%;max-width:520px;text-align:center}
+h1{font-size:clamp(2rem,8vw,3rem);margin:0 0 8px}
+.subtitle{color:#c9c2e7;margin:0 0 22px}
+.panel{
+ padding:22px;border-radius:22px;
+ background:#ffffff0d;border:1px solid #ffffff20;
+ box-shadow:0 15px 45px #0005
+}
+.stats{display:flex;gap:10px;margin-bottom:18px}
+.stat{flex:1;background:#ffffff0d;padding:11px 4px;border-radius:12px}
+.stat small{display:block;color:#c9c2e7;margin-bottom:5px}
+.stat strong{font-size:1.35rem}
+.timer{height:8px;background:#ffffff20;border-radius:10px;overflow:hidden}
+.bar{height:100%;width:100%;background:#d0a2ff;transition:width .1s linear}
+.level{color:#ffd77b;font-weight:bold;margin-top:18px}
+.question{font-size:1rem;color:#c9c2e7;margin:15px 0 8px}
+.sequence{
+ display:flex;align-items:center;justify-content:center;
+ flex-wrap:wrap;gap:9px;padding:20px 5px;
+ background:#ffffff08;border-radius:16px;min-height:105px
+}
+.symbol{
+ width:49px;height:49px;border-radius:12px;
+ display:flex;align-items:center;justify-content:center;
+ font-size:2rem;background:#ffffff12
+}
+.missing{color:#d0a2ff;border:2px dashed #d0a2ff}
+.answers{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin-top:18px}
+.answer{
+ padding:15px;border:2px solid #ffffff20;border-radius:13px;
+ background:#ffffff0d;color:white;font-size:1.6rem;cursor:pointer
+}
+.answer:active{transform:scale(.96)}
+.answer:disabled{cursor:default;opacity:.65}
+.status{min-height:27px;margin:16px 0 5px;font-weight:bold}
+.primary{
+ width:100%;padding:15px;border:0;border-radius:12px;
+ background:#d0a2ff;color:#1b1430;font-size:1rem;
+ font-weight:bold;cursor:pointer;margin-top:10px
+}
+.hidden{display:none!important}
+.help{font-size:.85rem;line-height:1.5;color:#c9c2e7;margin-top:16px}
+.footer{font-size:.8rem;color:#9690b8;margin-top:18px}
+</style>
+</head>
+<body>
+<main class="game">
+ <h1>🧩 Pattern Master</h1>
+ <p class="subtitle">Find the pattern. Predict what's next.</p>
+
+ <section class="panel">
+  <div class="stats">
+   <div class="stat"><small>⭐ Score</small><strong id="score">0</strong></div>
+   <div class="stat"><small>⚡ Level</small><strong id="level">1</strong></div>
+   <div class="stat"><small>🏆 Best</small><strong id="best">0</strong></div>
+  </div>
+
+  <div class="timer"><div class="bar" id="bar"></div></div>
+  <div class="level" id="levelLabel">LEVEL 1</div>
+  <p class="question">WHAT COMES NEXT?</p>
+  <div class="sequence" id="sequence"></div>
+  <div class="answers" id="answers"></div>
+  <div class="status" id="status" aria-live="polite">Ready to test your logic?</div>
+  <button class="primary" id="start">START PUZZLE ▶</button>
+  <button class="primary hidden" id="share">SHARE YOUR SCORE 📲</button>
+  <p class="help">Look for repeating symbols, changing numbers, or alternating patterns. Select the missing next item!</p>
+ </section>
+ <p class="footer">Observe carefully. Think logically. Master every pattern.</p>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const symbols=["🔴","🔵","🟢","🟡","🟣","⭐","🔺","🟩","🟠","💎"];
+const GAME_SECONDS=40;
+
+let score=0,level=1,best=Number(localStorage.getItem("patternMasterBest")||0);
+let timeLeft=GAME_SECONDS,playing=false,locked=false;
+let timer=null,nextTimer=null,roundId=0;
+let currentAnswer="";
+
+$("best").textContent=best;
+
+function shuffle(array){
+ const result=[...array];
+ for(let i=result.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));
+  [result[i],result[j]]=[result[j],result[i]];
+ }
+ return result;
+}
+
+function makePuzzle(){
+ const difficulty=Math.min(5,1+Math.floor(score/50));
+ const type=Math.floor(Math.random()*(difficulty>=3?4:3));
+ let sequence=[],answer="";
+
+ if(type===0){
+  // Repeating symbol sequence.
+  const a=symbols[Math.floor(Math.random()*symbols.length)];
+  const b=symbols.filter(s=>s!==a)[Math.floor(Math.random()*(symbols.length-1))];
+  sequence=[a,b,a,b,a];
+  answer=b;
+ }else if(type===1){
+  // Growing sequence.
+  const a=symbols[Math.floor(Math.random()*symbols.length)];
+  const b=symbols.filter(s=>s!==a)[Math.floor(Math.random()*(symbols.length-1))];
+  sequence=[a,a,b,a,a,b,a,a];
+  answer=b;
+ }else if(type===2){
+  // Three-symbol repeating cycle.
+  const picks=shuffle(symbols).slice(0,3);
+  sequence=[...picks,...picks.slice(0,2)];
+  answer=picks[2];
+ }else{
+  // Alternating sequence with a missing item.
+  const picks=shuffle(symbols).slice(0,2);
+  sequence=[picks[0],picks[1],picks[0],picks[1],picks[0],picks[1]];
+  answer=picks[0];
+ }
+
+ return {sequence,answer,difficulty};
+}
+
+function updateStats(){
+ $("score").textContent=score;
+ $("level").textContent=level;
+ $("best").textContent=best;
+}
+
+function newRound(){
+ if(!playing)return;
+ locked=false;
+ const id=++roundId;
+ const puzzle=makePuzzle();
+ currentAnswer=puzzle.answer;
+ level=1+Math.floor(score/50);
+ $("levelLabel").textContent="LEVEL "+level;
+ $("level").textContent=level;
+
+ const sequenceEl=$("sequence");
+ sequenceEl.innerHTML="";
+ puzzle.sequence.forEach(symbol=>{
+  const item=document.createElement("div");
+  item.className="symbol";
+  item.textContent=symbol;
+  sequenceEl.appendChild(item);
+ });
+
+ const missing=document.createElement("div");
+ missing.className="symbol missing";
+ missing.textContent="?";
+ sequenceEl.appendChild(missing);
+
+ const choices=shuffle([
+  currentAnswer,
+  ...shuffle(symbols.filter(s=>s!==currentAnswer)).slice(0,3)
+ ]);
+
+ const answersEl=$("answers");
+ answersEl.innerHTML="";
+ choices.forEach(symbol=>{
+  const button=document.createElement("button");
+  button.className="answer";
+  button.textContent=symbol;
+  button.setAttribute("aria-label","Choose "+symbol);
+  button.addEventListener("click",()=>chooseAnswer(symbol,id));
+  answersEl.appendChild(button);
+ });
+
+ $("status").textContent="Which symbol comes next?";
+ $("status").style.color="#fff";
+}
+
+function chooseAnswer(choice,id){
+ if(!playing||locked||id!==roundId)return;
+ locked=true;
+
+ if(choice===currentAnswer){
+  score+=10+Math.min(level*2,10);
+  $("status").textContent="🎉 Correct! Pattern mastered!";
+  $("status").style.color="#76f0ae";
+ }else{
+  $("status").textContent="❌ Not quite! Correct answer: "+currentAnswer;
+  $("status").style.color="#ff8c9e";
+ }
+
+ if(score>best){
+  best=score;
+  localStorage.setItem("patternMasterBest",String(best));
+ }
+
+ updateStats();
+ [...$("answers").children].forEach(b=>b.disabled=true);
+
+ clearTimeout(nextTimer);
+ nextTimer=setTimeout(()=>{
+  if(playing&&id===roundId)newRound();
+ },700);
+}
+
+function endGame(){
+ if(!playing)return;
+ playing=false;
+ clearInterval(timer);
+ clearTimeout(nextTimer);
+ [...$("answers").children].forEach(b=>b.disabled=true);
+ $("sequence").innerHTML='<div class="symbol">🏁</div>';
+ $("status").textContent="Time's up! Final score: "+score;
+ $("status").style.color="#fff";
+ $("start").textContent="PLAY AGAIN ↻";
+ $("start").classList.remove("hidden");
+ $("share").classList.remove("hidden");
+ $("bar").style.width="0%";
+ updateStats();
+}
+
+function startGame(){
+ clearInterval(timer);
+ clearTimeout(nextTimer);
+ score=0;level=1;timeLeft=GAME_SECONDS;
+ playing=true;locked=false;
+ $("start").classList.add("hidden");
+ $("share").classList.add("hidden");
+ $("bar").style.width="100%";
+ updateStats();
+ newRound();
+
+ timer=setInterval(()=>{
+  timeLeft=Math.max(0,timeLeft-.1);
+  $("bar").style.width=(timeLeft/GAME_SECONDS*100)+"%";
+  if(timeLeft<=0)endGame();
+ },100);
+}
+
+$("start").addEventListener("click",startGame);
+
+$("share").addEventListener("click",async()=>{
+ const message="I scored "+score+" points in Pattern Master 🧩 Can you beat me?";
+ try{
+  if(navigator.share){
+   await navigator.share({title:"Pattern Master",text:message});
+  }else{
+   await navigator.clipboard.writeText(message);
+   $("status").textContent="Score copied! Challenge a friend.";
+  }
+ }catch(e){
+  $("status").textContent=message;
+ }
+});
+</script>
+</body>
+</html>
